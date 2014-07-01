@@ -8,10 +8,9 @@
  */
 angular.module('googleOauth', ['angularOauth']).
 
-  constant('GoogleTokenVerifier', function(config, accessToken) {
+  constant('GoogleTokenVerifier', function(config, accessToken, deferred) {
     var $injector = angular.injector(['ng']);
-    return $injector.invoke(['$http', '$rootScope', '$q', function($http, $rootScope, $q) {
-      var deferred = $q.defer();
+    return $injector.invoke(['$http', '$rootScope', function($http, $rootScope) {
       var verificationEndpoint = 'https://www.googleapis.com/oauth2/v1/tokeninfo';
 
       $rootScope.$apply(function() {
@@ -34,7 +33,7 @@ angular.module('googleOauth', ['angularOauth']).
           });
       });
 
-      return deferred.promise;
+      return deferred;
     }]);
   }).
 

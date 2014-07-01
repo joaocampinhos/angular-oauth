@@ -69,10 +69,11 @@ angular.module('angularOauth', []).
         // TODO: Facebook uses comma-delimited scopes. This is not compliant with section 3.3 but perhaps support later.
 
         return {
-          response_type: config.responseType || RESPONSE_TYPE,
+          response_type: RESPONSE_TYPE,
           client_id: config.clientId,
           redirect_uri: config.redirectUri,
-          scope: config.scopes.join(" ")
+          scope: config.scopes.join(" "),
+          state: config.state
         }
       };
 
@@ -99,13 +100,6 @@ angular.module('angularOauth', []).
         },
 
         /**
-         * Forgets the access token.
-         */
-        clear: function() {
-          localStorage.removeItem(config.localStorageName);
-        },
-
-        /**
          * Verifies that the access token is was issued for the use of the current client.
          *
          * @param accessToken An access token received from the authorization server.
@@ -122,13 +116,15 @@ angular.module('angularOauth', []).
          *      `status`, `headers`, `config`).
          */
         verifyAsync: function(accessToken) {
-          return config.verifyFunc(config, accessToken);
+          var deferred = $q.defer();
+          config.verifyFunc(config, accessToken, deferred);
+          return deferred.promise;
         },
 
         /**
          * Verifies an access token asynchronously.
          *
-         * @param extraParams Additional params to be appended to the query string of the request.
+         * @param extraParams An access token received from the authorization server.
          * @param popupOptions Settings for the display of the popup.
          * @returns {Promise} Promise that will be resolved when the authorization server has verified that the
          *  token is valid, and we've verified that the token is passed back has audience that matches our client
@@ -175,8 +171,6 @@ angular.module('angularOauth', []).
           // TODO: binding occurs for each reauthentication, leading to leaks for long-running apps.
 
           angular.element($window).bind('message', function(event) {
-            // Use JQuery originalEvent if present
-            event = event.originalEvent || event;
             if (event.source == popup && event.origin == window.location.origin) {
               $rootScope.$apply(function() {
                 if (event.data.access_token) {
@@ -191,6 +185,18 @@ angular.module('angularOauth', []).
           // TODO: reject deferred if the popup was closed without a message being delivered + maybe offer a timeout
 
           return deferred.promise;
+        },
+
+        extendConfig: function(configExtension) {
+          config = angular.extend(config, configExtension);
+        },
+
+        getTokenWithRedirect: function(extraParams) {
+
+            var params = angular.extend(getParams(), extraParams),
+                url = config.authorizationEndpoint + '?' + objectToQueryString(params);
+
+            $window.open(url, "_self");
         }
       }
     }
@@ -230,4 +236,48 @@ angular.module('angularOauth', []).
 
     window.opener.postMessage(params, "*");
     window.close();
+  });
+
+  angular.module('angularOauthRedirect', ['angularOauth']).config(['TokenProvider', function (TokenProvider) {
+
+    // can't find any other way to avoid exception if I want to be able to use Token.set inside RedirectCtrl
+    TokenProvider.extendConfig({
+        clientId: 'test',
+        authorizationEndpoint: 'test',
+        redirectUri: 'test',
+        scopes: ['test'],
+        verifyFunc: 'test'
+    });
+
+  }]).
+
+  controller('RedirectCtrl', function($scope, $location, $window, $log, Token) {
+
+    /**
+     * TODO duplicate from CallbackCtrl
+     *
+     * Parses an escaped url query string into key-value pairs.
+     *
+     * (Copied from Angular.js in the AngularJS project.)
+     *
+     * @returns Object.<(string|boolean)>
+     */
+    function parseKeyValue(/**string*/keyValue) {
+      var obj = {}, key_value, key;
+      angular.forEach((keyValue || "").split('&'), function(keyValue){
+        if (keyValue) {
+          key_value = keyValue.split('=');
+          key = decodeURIComponent(key_value[0]);
+          obj[key] = angular.isDefined(key_value[1]) ? decodeURIComponent(key_value[1]) : true;
+        }
+      });
+      return obj;
+    }
+
+    var queryString = $location.path().substring(1);  // preceding slash omitted
+    var params = parseKeyValue(queryString);
+
+    Token.set(params.access_token);
+
+    $window.open(params.state, "_self");
   });
